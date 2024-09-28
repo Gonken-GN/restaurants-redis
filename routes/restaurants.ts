@@ -8,7 +8,7 @@ import {
   reviewDetailsKeyById,
   reviewKeyById,
 } from "../utils/keys.js";
-import { successResponse } from "../utils/responses.js";
+import { errorResponse, successResponse } from "../utils/responses.js";
 import { checkRestaurantExists } from "../middlewares/checkRestaurantId.js";
 import { ReviewSchema, type Review } from "../schemas/review.js";
 const router = express.Router();
@@ -53,6 +53,58 @@ router.post(
         client.hSet(reviewDetailsKey, reviewData),
       ]);
       successResponse(res, reviewData, "Review added successfully");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.get(
+  "/:restaurantId/reviews",
+  checkRestaurantExists,
+  async (req: Request<{ restaurantId: string }>, res, next) => {
+    const { restaurantId } = req.params;
+    const { page = 1, pageSize = 10 } = req.query;
+    const start = (Number(page) - 1) * Number(pageSize);
+    const end = start + Number(pageSize) - 1;
+
+    try {
+      const client = await initializeRedisClient();
+      const reviewKey = reviewKeyById(restaurantId);
+
+      const reviewIds = await client.lRange(reviewKey, start, end);
+      const reviews = await Promise.all(
+        reviewIds.map((id) => client.hGetAll(reviewDetailsKeyById(id)))
+      );
+      successResponse(res, reviews, "Reviews found");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.delete(
+  "/:restaurantId/reviews/:reviewId",
+  checkRestaurantExists,
+  async (
+    req: Request<{ restaurantId: string; reviewId: string }>,
+    res,
+    next
+  ) => {
+    const { restaurantId, reviewId } = req.params;
+    try {
+      const client = await initializeRedisClient();
+      const reviewKey = reviewKeyById(restaurantId);
+      const reviewDetailKey = reviewDetailsKeyById(reviewId);
+
+      const [removeResult, deleteResult] = await Promise.all([
+        client.lRem(reviewKey, 0, reviewId),
+        client.del(reviewDetailKey),
+      ]);
+      if (removeResult === 0 && deleteResult === 0) {
+        errorResponse(res, 404, "Review not found");
+      }
+      successResponse(res, reviewId, "Review deleted successfully");
     } catch (error) {
       next(error);
     }
