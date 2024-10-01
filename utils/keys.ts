@@ -20,3 +20,4 @@ export const restaurantDetailsKeyById = (id: string) =>
   getKeyName("restaurant_details", id);
 
 export const indexKey = getKeyName("index", "restaurants");
+export const bloomKey = getKeyName("bloom", "restaurants");

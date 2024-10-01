@@ -9,6 +9,7 @@ import {
 import { initializeRedisClient } from "../utils/client.js";
 import { nanoid } from "nanoid";
 import {
+  bloomKey,
   cuisinesKey,
   cuisinesKeyById,
   indexKey,
@@ -54,6 +55,11 @@ router.post("/", validate(RestaurantSchema), async (req, res, next) => {
     const client = await initializeRedisClient();
     const id = nanoid();
     const restaurantKey = restaurantKeyById(id);
+    const bloomString = `${data.name} ${data.location}`;
+    const seenBefore = await client.bf.exists(bloomKey, bloomString);
+    if (seenBefore) {
+      return errorResponse(res, 409, "Restaurant already exists");
+    }
 
     const hashData = { id, name: data.name, location: data.location };
     await Promise.all([
@@ -69,6 +75,7 @@ router.post("/", validate(RestaurantSchema), async (req, res, next) => {
         score: 0,
         value: id,
       }),
+      client.bf.add(bloomKey, bloomString),
     ]);
     successResponse(res, hashData, "Restaurant added successfully");
   } catch (error) {
@@ -117,7 +124,7 @@ router.get("/search", async (req, res, next) => {
   const { q } = req.query;
   try {
     const client = await initializeRedisClient();
-    const results = await client.ft.search(indexKey, `@name:${q}`);
+    const results = await client.ft.search(indexKey, `@name:${q}*`);
     successResponse(res, results, "Search results found");
   } catch (error) {
     next(error);
